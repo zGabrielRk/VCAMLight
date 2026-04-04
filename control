@@ -1,0 +1,10 @@
+Package: com.vcamlight.tweak
+Name: VCAMLight
+Version: 1.0
+Architecture: iphoneos-arm64
+Description: Minimal virtual camera overlay. Volume +/- to open.
+Author: VCAMLight
+Maintainer: VCAMLight <dev@local>
+Section: Tweaks
+Depends: ellekit
+Tag: roothide
