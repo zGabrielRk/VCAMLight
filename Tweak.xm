@@ -155,9 +155,10 @@ static CVPixelBufferRef vcam_nextFrame(void) {
         %init(MediaServerd);
 
         // Listen for video change notifications from the overlay
+        int notifyToken = 0;
         notify_register_dispatch(
             [kDarwinNote UTF8String],
-            &(int){0},
+            &notifyToken,
             dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
             ^(int token) {
                 NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
