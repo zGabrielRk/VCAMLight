@@ -11,20 +11,42 @@ jobs:
   build:
     runs-on: macos-latest
 
+    env:
+      THEOS: ${{ github.workspace }}/theos
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Theos
-        uses: theos/theos-action@v2
+      - name: Cache Theos
+        id: theos-cache
+        uses: actions/cache@v4
         with:
-          theos-sdks-source: https://github.com/theos/sdks
-          cache-theos: true
+          path: ${{ github.workspace }}/theos
+          key: theos-${{ runner.os }}-v1
+
+      - name: Install Theos
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+
+      - name: Cache SDK
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/theos/sdks
+          key: sdks-iphone16-v1
+
+      - name: Install iOS SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 https://github.com/theos/sdks.git /tmp/theos-sdks
+          cp -r /tmp/theos-sdks/*.sdk $THEOS/sdks/
 
       - name: Build package
         run: make package THEOS_PACKAGE_SCHEME=rootless
 
-      - name: Upload .deb artifact
+      - name: Upload .deb
         uses: actions/upload-artifact@v4
         with:
           name: VCAMLight-deb
