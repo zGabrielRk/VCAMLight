@@ -1,0 +1,42 @@
+name: Build VCAMLight
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Install iOS SDK
+        run: |
+          curl -LO https://github.com/theos/sdks/releases/latest/download/iPhoneOS16.5.sdk.tar.xz
+          tar -xJf iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks/
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Build package
+        run: |
+          make package THEOS_PACKAGE_SCHEME=rootless
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VCAMLight-deb
+          path: packages/*.deb
+          if-no-files-found: error
