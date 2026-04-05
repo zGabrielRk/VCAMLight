@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
 
     env:
       THEOS: ${{ github.workspace }}/theos
@@ -23,7 +23,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}-v2
+          key: theos-macOS14-v3
 
       - name: Install Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
-          key: sdk-iphone16-v2
+          key: sdk-iphone16-macOS14-v3
 
       - name: Install iOS SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
