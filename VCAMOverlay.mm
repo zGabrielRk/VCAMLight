@@ -168,18 +168,19 @@ static NSString *const kVerifyURL  = @"https://vcamlight-api.example.com/auth/ve
         self.overlayWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     }
     self.overlayWindow.windowLevel = UIWindowLevelAlert + 100;
-    self.overlayWindow.backgroundColor = CLR_OVERLAY_BG;
-
-    // Tap backdrop to dismiss
-    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
-        initWithTarget:self action:@selector(backdropTapped:)];
-    tap.cancelsTouchesInView = NO;
-    [self.overlayWindow addGestureRecognizer:tap];
+    self.overlayWindow.backgroundColor = [UIColor clearColor];
 
     // Root VC
     UIViewController *root = [UIViewController new];
-    root.view.backgroundColor = [UIColor clearColor];
+    root.view.backgroundColor = CLR_OVERLAY_BG;
     self.overlayWindow.rootViewController = root;
+
+    // Transparent button for background tap
+    UIButton *backdropBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    backdropBtn.frame = [UIScreen mainScreen].bounds;
+    backdropBtn.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [backdropBtn addTarget:self action:@selector(performHide) forControlEvents:UIControlEventTouchUpInside];
+    [root.view addSubview:backdropBtn];
 
     // Build both cards
     [self buildLoginCard];
@@ -301,7 +302,7 @@ static NSString *const kVerifyURL  = @"https://vcamlight-api.example.com/auth/ve
     // ── Close X ──
     [self addCloseButton:self.loginCard width:cardW];
 
-    [self.overlayWindow addSubview:self.loginCard];
+    [self.overlayWindow.rootViewController.view addSubview:self.loginCard];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -427,7 +428,7 @@ static NSString *const kVerifyURL  = @"https://vcamlight-api.example.com/auth/ve
     // ── Close X ──
     [self addCloseButton:self.mainCard width:cardW];
 
-    [self.overlayWindow addSubview:self.mainCard];
+    [self.overlayWindow.rootViewController.view addSubview:self.mainCard];
 
     // Check if already applied
     [self checkExistingVideo];
@@ -522,13 +523,7 @@ static NSString *const kVerifyURL  = @"https://vcamlight-api.example.com/auth/ve
     }];
 }
 
-- (void)backdropTapped:(UITapGestureRecognizer *)gesture {
-    CGPoint loc = [gesture locationInView:self.overlayWindow];
-    UIView *activeCard = self.loggedIn ? self.mainCard : self.loginCard;
-    if (!CGRectContainsPoint(activeCard.frame, loc)) {
-        [self performHide];
-    }
-}
+    // backdropTapped removed in favor of background UIButton
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ═══ LOGIN LOGIC ═════════════════════════════════════════════════════════════

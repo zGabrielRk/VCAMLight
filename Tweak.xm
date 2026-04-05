@@ -14,14 +14,32 @@
 
 %group SpringBoard
 
+static NSTimeInterval lastInc = 0;
+static NSTimeInterval lastDec = 0;
+static NSTimeInterval lastToggle = 0;
+
 %hook SBVolumeControl
 
 - (void)increaseVolume {
-    [VCAMOverlay toggle];
+    %orig;
+    lastInc = CACurrentMediaTime();
+    if (ABS(lastInc - lastDec) < 0.2 && (lastInc - lastToggle > 1.0)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [VCAMOverlay toggle];
+        });
+        lastToggle = CACurrentMediaTime();
+    }
 }
 
 - (void)decreaseVolume {
-    [VCAMOverlay toggle];
+    %orig;
+    lastDec = CACurrentMediaTime();
+    if (ABS(lastInc - lastDec) < 0.2 && (lastDec - lastToggle > 1.0)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [VCAMOverlay toggle];
+        });
+        lastToggle = CACurrentMediaTime();
+    }
 }
 
 %end
