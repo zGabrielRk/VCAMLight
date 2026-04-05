@@ -34,11 +34,7 @@ static NSString *kPrefsPath  = @"/var/tmp/com.apple.avfcache/prefs.plist";
 static NSString *kVideoPath  = @"/var/tmp/com.apple.avfcache/selected.mov";
 static NSString *kDarwinNote = @"com.vcamlight.videochanged";
 
-// Replacement function pointer storage
-static void (*orig_avf_captureOutput)(id, SEL, id, CMSampleBufferRef, id) = nil;
-
 // Current replacement frame data
-static CVPixelBufferRef gReplacementPixelBuffer = NULL;
 static dispatch_queue_t gDecodeQueue = nil;
 static AVAssetReader    *gReader     = nil;
 static AVAssetReaderTrackOutput *gTrackOutput = nil;
