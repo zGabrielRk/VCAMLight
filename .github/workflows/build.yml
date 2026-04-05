@@ -23,29 +23,29 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-macOS14-v3
+          key: theos-macOS14-v4
 
       - name: Install Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
         run: git clone --recursive https://github.com/theos/theos.git $THEOS
 
-      - name: Cache SDK
-        id: sdk-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/theos/sdks/iPhoneOS17.5.sdk
-          key: sdk-iphone17-macOS14-v4
-
-      - name: Install iOS SDK
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
+      - name: Setup Xcode SDK for Theos
         run: |
-          brew install git-lfs
-          git lfs install
-          git clone --depth=1 https://github.com/theos/sdks.git /tmp/theos-sdks
-          cp -r /tmp/theos-sdks/iPhoneOS17.5.sdk $THEOS/sdks/
+          # Find the SDK that ships with the runner's Xcode (always compatible)
+          XCODE_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "Using Xcode SDK: $XCODE_SDK (version $SDK_VERSION)"
+
+          # Create sdks dir and symlink the Xcode SDK into theos
+          mkdir -p $THEOS/sdks
+          ln -sfn "$XCODE_SDK" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          ls -la $THEOS/sdks/
 
       - name: Build package
-        run: make package THEOS_PACKAGE_SCHEME=rootless
+        run: |
+          # Detect SDK version and pass it to make
+          SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
+          make package THEOS_PACKAGE_SCHEME=rootless TARGET="iphone:clang:${SDK_VERSION}:14.0"
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4
