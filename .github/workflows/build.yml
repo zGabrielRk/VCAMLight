@@ -23,25 +23,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}-v1
+          key: theos-${{ runner.os }}-v2
 
       - name: Install Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --recursive https://github.com/theos/theos.git $THEOS
+        run: git clone --recursive https://github.com/theos/theos.git $THEOS
 
       - name: Cache SDK
         id: sdk-cache
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/theos/sdks
-          key: sdks-iphone16-v1
+          path: ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
+          key: sdk-iphone16-v2
 
       - name: Install iOS SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
+          brew install git-lfs
+          git lfs install
           git clone --depth=1 https://github.com/theos/sdks.git /tmp/theos-sdks
-          cp -r /tmp/theos-sdks/*.sdk $THEOS/sdks/
+          cp -r /tmp/theos-sdks/iPhoneOS16.5.sdk $THEOS/sdks/
 
       - name: Build package
         run: make package THEOS_PACKAGE_SCHEME=rootless
