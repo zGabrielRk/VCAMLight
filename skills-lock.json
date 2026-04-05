@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "Objective-C Protocols and Categories": {
+      "source": "thebushidocollective/han",
+      "sourceType": "github",
+      "computedHash": "4b65be1ebde96e47890e121685537cf7634c49f06b4e412859625b602ea657e3"
+    },
+    "ios-debugger-agent": {
+      "source": "dimillian/skills",
+      "sourceType": "github",
+      "computedHash": "fcdb45da6f1fe3d37f42bf87c77fd25df96f71e4632819387a37489b7896f6b0"
+    }
+  }
+}

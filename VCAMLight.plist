@@ -6,12 +6,16 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>com.apple.mediaserverd</string>
             <string>com.apple.springboard</string>
+            <string>com.apple.camera</string>
+            <string>com.apple.facetime</string>
+            <string>com.apple.MobileSMS</string>
+            <string>com.apple.UIKit</string>
         </array>
-        <key>Executables</key>
+        <key>Classes</key>
         <array>
-            <string>mediaserverd</string>
+            <string>AVCaptureVideoDataOutput</string>
+            <string>AVCaptureSession</string>
         </array>
     </dict>
 </dict>
