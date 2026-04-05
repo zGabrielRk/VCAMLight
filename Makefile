@@ -9,7 +9,6 @@ TWEAK_NAME = VCAMLight
 VCAMLight_FILES = Tweak.xm VCAMOverlay.mm
 VCAMLight_CFLAGS = -fobjc-arc -fno-modules
 VCAMLight_FRAMEWORKS = UIKit AVFoundation CoreMedia PhotosUI Foundation
-VCAMLight_PRIVATE_FRAMEWORKS = AppSupport
 VCAMLight_LIBRARIES = substrate
 
 ADDITIONAL_CFLAGS = -fno-modules
