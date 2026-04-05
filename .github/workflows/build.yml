@@ -33,8 +33,8 @@ jobs:
         id: sdk-cache
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
-          key: sdk-iphone16-macOS14-v3
+          path: ${{ github.workspace }}/theos/sdks/iPhoneOS17.5.sdk
+          key: sdk-iphone17-macOS14-v4
 
       - name: Install iOS SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
@@ -42,7 +42,7 @@ jobs:
           brew install git-lfs
           git lfs install
           git clone --depth=1 https://github.com/theos/sdks.git /tmp/theos-sdks
-          cp -r /tmp/theos-sdks/iPhoneOS16.5.sdk $THEOS/sdks/
+          cp -r /tmp/theos-sdks/iPhoneOS17.5.sdk $THEOS/sdks/
 
       - name: Build package
         run: make package THEOS_PACKAGE_SCHEME=rootless
