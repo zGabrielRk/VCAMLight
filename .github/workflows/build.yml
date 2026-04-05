@@ -41,6 +41,9 @@ jobs:
           ln -sfn "$XCODE_SDK" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
           ls -la $THEOS/sdks/
 
+      - name: Install ldid
+        run: brew install ldid
+
       - name: Build package
         run: |
           # Detect SDK version and pass it to make
