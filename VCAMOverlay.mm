@@ -3,11 +3,32 @@
 // Volume +/- → shows overlay → select video → apply to camera.
 
 #import "VCAMOverlay.h"
-#import <PhotosUI/PHPickerViewController.h>
-#import <PhotosUI/PHPickerFilter.h>
-#import <PhotosUI/PHPickerConfiguration.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AVFoundation/AVAsset.h>
+
+// Forward declarations — PhotosUI headers may not exist in iPhoneOS SDK for theos
+@interface PHPickerResult : NSObject
+@property (nonatomic, strong, readonly) NSItemProvider *itemProvider;
+@end
+
+@interface PHPickerFilter : NSObject
++ (PHPickerFilter *)videosFilter;
+@end
+
+@interface PHPickerConfiguration : NSObject
+@property (nonatomic, copy) PHPickerFilter *filter;
+@property (nonatomic, assign) NSInteger selectionLimit;
+- (instancetype)init;
+@end
+
+@interface PHPickerViewController : UIViewController
+- (instancetype)initWithConfiguration:(PHPickerConfiguration *)configuration;
+@property (nonatomic, weak) id delegate;
+@end
+
+@protocol PHPickerViewControllerDelegate <NSObject>
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results;
+@end
 
 // ── Shared prefs path (LordVCAM reads from here too) ─────────────────────────
 static NSString *const kPrefsPath  = @"/var/tmp/com.apple.avfcache/prefs.plist";
