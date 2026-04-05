@@ -7,15 +7,10 @@
         <key>Bundles</key>
         <array>
             <string>com.apple.springboard</string>
-            <string>com.apple.camera</string>
-            <string>com.apple.facetime</string>
-            <string>com.apple.MobileSMS</string>
-            <string>com.apple.UIKit</string>
         </array>
-        <key>Classes</key>
+        <key>Executables</key>
         <array>
-            <string>AVCaptureVideoDataOutput</string>
-            <string>AVCaptureSession</string>
+            <string>mediaserverd</string>
         </array>
     </dict>
 </dict>

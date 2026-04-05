@@ -1,22 +1,17 @@
 // Tweak.xm
-// VCAMLight — hooks volume buttons in SpringBoard to show the overlay,
-// and hooks AVCaptureVideoDataOutput in camera-using apps to inject
-// the selected video as the camera feed.
-
 #import "VCAMOverlay.h"
 #import <AVFoundation/AVFoundation.h>
-#import <objc/runtime.h>
 #import <substrate.h>
 #import <notify.h>
 
 // ── SpringBoard: Hook volume buttons ──────────────────────────────────────────
 // Runs inside SpringBoard process
 
-%group SpringBoard
-
 static NSTimeInterval lastInc = 0;
 static NSTimeInterval lastDec = 0;
 static NSTimeInterval lastToggle = 0;
+
+%group SpringBoard
 
 %hook SBVolumeControl
 
@@ -46,286 +41,159 @@ static NSTimeInterval lastToggle = 0;
 
 %end // SpringBoard
 
-// ── Camera Apps: Hook AVCaptureVideoDataOutput to inject virtual video ─────────
-// Runs inside any app that uses the camera
+// ── mediaserverd: Hook camera to inject virtual video ─────────────────────────
+// Runs inside mediaserverd process
 
 static NSString *kPrefsPath  = @"/var/tmp/com.vcamlight.cache/prefs.plist";
 static NSString *kVideoPath  = @"/var/tmp/com.vcamlight.cache/selected.mov";
 static NSString *kDarwinNote = @"com.vcamlight.videochanged";
-static NSString *kLoginNote  = @"com.vcamlight.loginchanged";
 
-// Current replacement frame state
-static AVAssetReader              *gReader      = nil;
-static AVAssetReaderTrackOutput   *gTrackOutput = nil;
-static BOOL                        gReplacing   = NO;
-static BOOL                        gLooping     = YES;
-static dispatch_queue_t            gDecodeQueue = nil;
-static NSLock                     *gReaderLock  = nil;
-
-// Track swizzled delegates to avoid double-swizzle
-static NSMutableSet *gSwizzledClasses = nil;
-
-// Original IMP storage
-static void (*gOrigCaptureOutput)(id, SEL, AVCaptureOutput*,
-    CMSampleBufferRef, AVCaptureConnection*);
-
-// ── Video reader setup ────────────────────────────────────────────────────────
+// Current replacement frame data
+static dispatch_queue_t gDecodeQueue = nil;
+static AVAssetReader    *gReader     = nil;
+static AVAssetReaderTrackOutput *gTrackOutput = nil;
+static BOOL             gReplacing  = NO;
+static BOOL             gLooping    = NO;
 
 static void vcam_setupReader(NSString *path) {
-    [gReaderLock lock];
     @try {
         [gReader cancelReading];
-        gReader = nil;
-        gTrackOutput = nil;
+        gReader = nil; gTrackOutput = nil;
 
-        if (!path || ![[NSFileManager defaultManager] fileExistsAtPath:path])  {
-            [gReaderLock unlock];
-            return;
-        }
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return;
 
-        NSURL *url = [NSURL fileURLWithPath:path];
-        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
-        NSArray *tracks = [asset tracksWithMediaType:AVMediaTypeVideo];
-        AVAssetTrack *track = tracks.firstObject;
-        if (!track) {
-            [gReaderLock unlock];
-            return;
-        }
+        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:path] options:nil];
+        AVAssetTrack *track = [asset tracksWithMediaType:AVMediaTypeVideo].firstObject;
+        if (!track) return;
 
-        NSError *err = nil;
+        NSError *err;
         gReader = [[AVAssetReader alloc] initWithAsset:asset error:&err];
-        if (err || !gReader) {
-            gReader = nil;
-            [gReaderLock unlock];
-            return;
-        }
+        if (err) return;
 
         NSDictionary *settings = @{
-            (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA)
+            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)
         };
         gTrackOutput = [[AVAssetReaderTrackOutput alloc]
-                         initWithTrack:track outputSettings:settings];
+                        initWithTrack:track outputSettings:settings];
         gTrackOutput.alwaysCopiesSampleData = NO;
         [gReader addOutput:gTrackOutput];
         [gReader startReading];
-    } @catch (NSException *e) {
-        gReader = nil;
-        gTrackOutput = nil;
-    }
-    [gReaderLock unlock];
+    } @catch (...) {}
 }
 
 static CVPixelBufferRef vcam_nextFrame(void) {
-    [gReaderLock lock];
-    if (!gTrackOutput || !gReader) {
-        [gReaderLock unlock];
-        return NULL;
-    }
+    if (!gTrackOutput) return NULL;
 
     CMSampleBufferRef sample = [gTrackOutput copyNextSampleBuffer];
-    if (!sample && gLooping) {
-        // Loop: re-create reader from the beginning
-        [gReader cancelReading];
-        gReader = nil;
-        gTrackOutput = nil;
-        [gReaderLock unlock];
-
-        NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
-        NSString *path = prefs[@"galName"] ?: kVideoPath;
-        vcam_setupReader(path);
-
-        [gReaderLock lock];
-        if (gTrackOutput) {
-            sample = [gTrackOutput copyNextSampleBuffer];
+    if (!sample) {
+        // Loop: restart reader
+        if (gLooping) {
+            NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
+            NSString *path = prefs[@"galName"] ?: kVideoPath;
+            vcam_setupReader(path);
+            if (gTrackOutput) {
+                sample = [gTrackOutput copyNextSampleBuffer];
+            }
         }
+        if (!sample) return NULL;
     }
-    [gReaderLock unlock];
-
-    if (!sample) return NULL;
 
     CVPixelBufferRef px = CMSampleBufferGetImageBuffer(sample);
     if (px) CVPixelBufferRetain(px);
     CFRelease(sample);
-    return px; // caller must release
+    return px;
 }
 
-// ── Replacement delegate method ───────────────────────────────────────────────
+%group MediaServerd
 
-static void vcam_replacementCaptureOutput(id self, SEL _cmd,
-    AVCaptureOutput *output, CMSampleBufferRef sampleBuffer,
-    AVCaptureConnection *connection) {
+// Hook AVCaptureVideoDataOutput delegate callback inside mediaserverd
+%hook AVCaptureOutput
 
-    // Check if replacement is active
-    if (!gReplacing) {
-        if (gOrigCaptureOutput) {
-            gOrigCaptureOutput(self, _cmd, output, sampleBuffer, connection);
-        }
+- (void)_AVOutputContext_notifyObserversOfNewSampleBuffer:(CMSampleBufferRef)sampleBuffer
+                                           forConnection:(id)connection {
+    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
+    BOOL replOn = [prefs[@"replOn"] boolValue];
+
+    if (!replOn) {
+        %orig;
         return;
     }
 
     // Get replacement frame
     CVPixelBufferRef px = vcam_nextFrame();
-    if (!px) {
-        if (gOrigCaptureOutput) {
-            gOrigCaptureOutput(self, _cmd, output, sampleBuffer, connection);
-        }
-        return;
-    }
+    if (!px) { %orig; return; }
 
-    // Build a new CMSampleBuffer with the replacement pixel buffer
+    // Build a new sample buffer with the replacement pixel buffer
     CMSampleTimingInfo timing;
     CMSampleBufferGetSampleTimingInfo(sampleBuffer, 0, &timing);
 
-    CMVideoFormatDescriptionRef fmt = NULL;
-    OSStatus status = CMVideoFormatDescriptionCreateForImageBuffer(
-        kCFAllocatorDefault, px, &fmt);
-
-    if (status != noErr || !fmt) {
-        CVPixelBufferRelease(px);
-        if (gOrigCaptureOutput) {
-            gOrigCaptureOutput(self, _cmd, output, sampleBuffer, connection);
-        }
-        return;
-    }
+    CMVideoFormatDescriptionRef fmt;
+    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, px, &fmt);
 
     CMSampleBufferRef newSample = NULL;
-    status = CMSampleBufferCreateForImageBuffer(
+    CMSampleBufferCreateForImageBuffer(
         kCFAllocatorDefault, px, true, NULL, NULL, fmt, &timing, &newSample);
 
+    CFRelease(px);
     CFRelease(fmt);
 
-    if (status == noErr && newSample) {
-        if (gOrigCaptureOutput) {
-            gOrigCaptureOutput(self, _cmd, output, newSample, connection);
-        }
+    if (newSample) {
+        // Replace the original call with our modified buffer
+        %orig(newSample, connection);
         CFRelease(newSample);
     } else {
-        if (gOrigCaptureOutput) {
-            gOrigCaptureOutput(self, _cmd, output, sampleBuffer, connection);
-        }
-    }
-
-    CVPixelBufferRelease(px);
-}
-
-// ── Swizzle delegate's captureOutput method ───────────────────────────────────
-
-static void vcam_swizzleDelegate(id delegate) {
-    if (!delegate) return;
-
-    Class cls = [delegate class];
-    NSString *clsName = NSStringFromClass(cls);
-
-    @synchronized(gSwizzledClasses) {
-        if ([gSwizzledClasses containsObject:clsName]) return;
-        [gSwizzledClasses addObject:clsName];
-    }
-
-    SEL sel = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
-    Method m = class_getInstanceMethod(cls, sel);
-    if (!m) return;
-
-    // Store original implementation
-    gOrigCaptureOutput = (void (*)(id, SEL, AVCaptureOutput*,
-        CMSampleBufferRef, AVCaptureConnection*))method_getImplementation(m);
-
-    // Replace with our function
-    method_setImplementation(m, (IMP)vcam_replacementCaptureOutput);
-}
-
-%group CameraApps
-
-// Hook AVCaptureVideoDataOutput to intercept delegate setup
-%hook AVCaptureVideoDataOutput
-
-- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)queue {
-    %orig;
-    if (delegate && gReplacing) {
-        vcam_swizzleDelegate(delegate);
+        %orig;
     }
 }
 
 %end
 
-// Also hook AVCaptureSession to catch when it starts
-%hook AVCaptureSession
-
-- (void)startRunning {
-    %orig;
-
-    // Check all outputs for video data outputs with delegates
-    for (AVCaptureOutput *output in self.outputs) {
-        if ([output isKindOfClass:[AVCaptureVideoDataOutput class]]) {
-            AVCaptureVideoDataOutput *vdo = (AVCaptureVideoDataOutput *)output;
-            id delegate = [vdo sampleBufferDelegate];
-            if (delegate && gReplacing) {
-                vcam_swizzleDelegate(delegate);
-            }
-        }
-    }
-}
-
-%end
-
-%end // CameraApps
+%end // MediaServerd
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 %ctor {
-    @autoreleasepool {
-        NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
+    NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
+    NSString *processName = [[NSProcessInfo processInfo] processName];
+    
+    // Create cache directory if needed
+    [[NSFileManager defaultManager]
+        createDirectoryAtPath:@"/var/tmp/com.vcamlight.cache"
+        withIntermediateDirectories:YES
+        attributes:nil
+        error:nil];
 
-        if ([bundleId isEqualToString:@"com.apple.springboard"]) {
-            // SpringBoard: hook volume buttons
-            %init(SpringBoard);
+    gDecodeQueue = dispatch_queue_create("com.vcamlight.decode", DISPATCH_QUEUE_SERIAL);
 
-        } else {
-            // Camera apps: hook AVCaptureVideoDataOutput delegates
-            gDecodeQueue = dispatch_queue_create(
-                "com.vcamlight.decode", DISPATCH_QUEUE_SERIAL);
-            gReaderLock = [[NSLock alloc] init];
-            gSwizzledClasses = [NSMutableSet new];
+    if ([bundleId isEqualToString:@"com.apple.springboard"]) {
+        // SpringBoard: hook volume buttons
+        %init(SpringBoard);
 
-            // Create cache directory
-            [[NSFileManager defaultManager]
-                createDirectoryAtPath:@"/var/tmp/com.vcamlight.cache"
-                withIntermediateDirectories:YES
-                attributes:nil
-                error:nil];
+    } else if ([processName isEqualToString:@"mediaserverd"]) {
+        // mediaserverd: hook camera
+        %init(MediaServerd);
 
-            // Load existing prefs
-            NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
-            gReplacing = [prefs[@"replOn"] boolValue];
-            gLooping   = [prefs[@"loopOn"] boolValue];
-
-            if (gReplacing) {
+        // Listen for video change notifications from the overlay
+        int notifyToken = 0;
+        notify_register_dispatch(
+            [kDarwinNote UTF8String],
+            &notifyToken,
+            dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
+            ^(int token) {
+                NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
                 NSString *path = prefs[@"galName"] ?: kVideoPath;
-                vcam_setupReader(path);
+                gReplacing = [prefs[@"replOn"] boolValue];
+                gLooping   = [prefs[@"loopOn"] boolValue];
+                if (gReplacing) vcam_setupReader(path);
             }
+        );
 
-            // Listen for video change notifications
-            int notifyToken = 0;
-            notify_register_dispatch(
-                [kDarwinNote UTF8String],
-                &notifyToken,
-                dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-                ^(int __unused token) {
-                    NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
-                    gReplacing = [p[@"replOn"] boolValue];
-                    gLooping   = [p[@"loopOn"] boolValue];
-                    if (gReplacing) {
-                        NSString *path = p[@"galName"] ?: kVideoPath;
-                        vcam_setupReader(path);
-                    } else {
-                        [gReaderLock lock];
-                        [gReader cancelReading];
-                        gReader = nil;
-                        gTrackOutput = nil;
-                        [gReaderLock unlock];
-                    }
-                }
-            );
-
-            %init(CameraApps);
+        // Load existing prefs on startup
+        NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPrefsPath];
+        gReplacing = [prefs[@"replOn"] boolValue];
+        gLooping   = [prefs[@"loopOn"] boolValue];
+        if (gReplacing) {
+            NSString *path = prefs[@"galName"] ?: kVideoPath;
+            vcam_setupReader(path);
         }
     }
 }
